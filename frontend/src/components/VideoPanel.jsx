@@ -14,7 +14,7 @@ export default function VideoPanel({ onAlert }) {
   const [restarting, setRestarting] = useState(false)
 
   // FPS counter
-  const fpsRef     = useRef({ count: 0, last: performance.now() })
+  const fpsRef     = useRef({ count: 0, last: 0 })
   const handleAlert = (alert) => {
     if (onAlert) onAlert(alert)
   }
@@ -53,6 +53,9 @@ export default function VideoPanel({ onAlert }) {
     onAlert: handleAlert,
     onFrame: () => {
       const now = performance.now()
+      if (fpsRef.current.last === 0) {
+        fpsRef.current.last = now
+      }
       fpsRef.current.count++
       if (now - fpsRef.current.last >= 1000) {
         setFps(fpsRef.current.count)

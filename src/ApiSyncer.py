@@ -50,7 +50,7 @@ class ApiSyncer:
                 files = {
                     "evidenceImage": (os.path.basename(image_path), f, "image/jpeg")
                 }
-                res = requests.post(self.url, data=payload, files=files, timeout=5)
+                res = requests.post(self.url, data=payload, files=files, timeout=15)
             if res.status_code in (200, 201):
                 print(f"\n[API] ✅ Đã đồng bộ vi phạm T{v_data['trash_id']} lên Backend")
             else:

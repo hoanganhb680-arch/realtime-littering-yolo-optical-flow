@@ -25,7 +25,6 @@ class ViolationConfirmationMixin:
 
         self._logger.confirm_and_log(
             t_id, t_center, data, status["violation_type"], annotated, current_persons, frame_idx,
-            clip_frames=self._get_evidence_clip_frames(annotated),
         )
         self._push_alert({
             "type": "violation",

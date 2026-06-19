@@ -19,7 +19,7 @@ class OwnerResolutionMixin:
         return self._owner_has_motion(self._person_history.get(owner_id, deque()))
 
     def _encode_evidence_frame(self, annotated: np.ndarray) -> bytes | None:
-        quality = int(getattr(self.cfg, "EVIDENCE_CLIP_JPEG_QUALITY", 65))
+        quality = int(getattr(self.cfg, "EVIDENCE_JPEG_QUALITY", 65))
         ok, buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, quality])
         return buf.tobytes() if ok else None
 
@@ -145,7 +145,6 @@ class OwnerResolutionMixin:
             t_center,
             annotated,
             frame_idx,
-            clip_frames=self._get_evidence_clip_frames(annotated),
             reason="owner_none",
         )
 

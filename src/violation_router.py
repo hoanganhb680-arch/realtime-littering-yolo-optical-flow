@@ -3,6 +3,7 @@
 # ==============================================================================
 import uuid
 from fastapi import APIRouter, File, UploadFile, Form, HTTPException, Query
+from fastapi.responses import FileResponse
 
 from minio.error import S3Error
 from minio_storage import MinIOStorage
@@ -33,6 +34,7 @@ async def record_violation(
         violationType: str        = Form(...),
         timestamp:     str        = Form(...),
         evidenceImage: UploadFile = File(...),
+        evidenceVideo: UploadFile | None = File(default=None),
 ):
     try:
         file_data = await evidenceImage.read()
@@ -43,9 +45,10 @@ async def record_violation(
         if existing:
             # Nếu vi phạm mới có điểm số cao hơn, cập nhật lại hành vi rõ rệt nhất
             if score > existing["score"]:
-                filename = existing["minio_filename"]
-                # Upload đè lên MinIO file cũ để cập nhật ảnh bằng chứng rõ nét nhất
+                filename = _build_filename(personId, trashId, evidenceImage.filename)
+                # Upload a fresh evidence image so its URL matches the latest trashId.
                 image_url = _storage.upload(filename, file_data, evidenceImage.content_type)
+                video_url = await _upload_optional_video(personId, trashId, evidenceVideo) or existing.get("video_url")
                 
                 # Cập nhật SQLite
                 _db.update_violation(
@@ -54,14 +57,16 @@ async def record_violation(
                     violation_type=violationType,
                     score=score,
                     timestamp=timestamp,
-                    evidence_url=image_url
+                    evidence_url=image_url,
+                    evidence_video_url=video_url,
                 )
                 
                 # Cập nhật bộ nhớ phiên chạy
                 session_highest_violations[personId] = {
                     "db_row_id": existing["db_row_id"],
                     "score": score,
-                    "minio_filename": filename
+                    "minio_filename": filename,
+                    "video_url": video_url,
                 }
                 
                 print(f"🔄 [Backend] Cập nhật vi phạm cho Person_{personId} với hành vi rõ hơn: {violationType} ({score * 100:.1f}%)")
@@ -75,6 +80,7 @@ async def record_violation(
                         "trashId"      : trashId,
                         "violationType": violationType,
                         "evidenceUrl"  : image_url,
+                        "evidenceVideoUrl": video_url,
                     },
                 }
             else:
@@ -87,6 +93,7 @@ async def record_violation(
             # Lần đầu tiên ghi nhận vi phạm cho personId này trong session hiện tại
             filename  = _build_filename(personId, trashId, evidenceImage.filename)
             image_url = _storage.upload(filename, file_data, evidenceImage.content_type)
+            video_url = await _upload_optional_video(personId, trashId, evidenceVideo)
 
             # Lưu mới vào SQLite
             row_id = _db.insert_violation(
@@ -96,16 +103,18 @@ async def record_violation(
                 score          = score,
                 timestamp      = timestamp,
                 evidence_url   = image_url,
+                evidence_video_url = video_url,
             )
 
             # Lưu thông tin theo dõi vào session
             session_highest_violations[personId] = {
                 "db_row_id": row_id,
                 "score": score,
-                "minio_filename": filename
+                "minio_filename": filename,
+                "video_url": video_url,
             }
 
-            _log_violation(personId, trashId, violationType, score, timestamp, image_url)
+            _log_violation(personId, trashId, violationType, score, timestamp, image_url, video_url)
 
             return {
                 "status" : "success",
@@ -116,6 +125,7 @@ async def record_violation(
                     "trashId"      : trashId,
                     "violationType": violationType,
                     "evidenceUrl"  : image_url,
+                    "evidenceVideoUrl": video_url,
                 },
             }
     except S3Error as e:
@@ -142,6 +152,28 @@ async def list_violations(
         "data"  : rows,
     }
 
+
+@router.get("/evidence/{filename}")
+async def get_local_evidence(filename: str):
+    from Config import Config
+    import os
+
+    safe_name = os.path.basename(filename)
+    path = os.path.join(Config.OUTPUT_DIR, safe_name)
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="Evidence file not found.")
+    ext = os.path.splitext(safe_name)[1].lower()
+    media_type = {
+        ".mp4": "video/mp4",
+        ".webm": "video/webm",
+        ".avi": "video/x-msvideo",
+        ".mov": "video/quicktime",
+        ".png": "image/png",
+        ".jpeg": "image/jpeg",
+        ".jpg": "image/jpeg",
+    }.get(ext, "application/octet-stream")
+    return FileResponse(path, media_type=media_type, filename=safe_name)
+
 # ------------------------------------------------------------------
 # POST /api/v1/violations/clear — xóa sạch SQLite + MinIO + ảnh cục bộ
 # ------------------------------------------------------------------
@@ -157,7 +189,9 @@ async def clear_violations():
         import glob
         import os
         cfg = Config()
-        files = glob.glob(os.path.join(cfg.OUTPUT_DIR, "*.jpg"))
+        files = []
+        for pattern in ("*.jpg", "*.jpeg", "*.png", "*.mp4", "*.webm", "*.avi", "*.mov"):
+            files.extend(glob.glob(os.path.join(cfg.OUTPUT_DIR, pattern)))
         for f in files:
             try:
                 os.remove(f)
@@ -186,11 +220,20 @@ async def clear_violations():
 # Helpers
 # ------------------------------------------------------------------
 
+async def _upload_optional_video(person_id: int, trash_id: int, evidence_video: UploadFile | None) -> str | None:
+    if evidence_video is None:
+        return None
+    video_data = await evidence_video.read()
+    if not video_data:
+        return None
+    filename = _build_filename(person_id, trash_id, evidence_video.filename or "clip.mp4")
+    return _storage.upload(filename, video_data, evidence_video.content_type or "video/mp4")
+
 def _build_filename(person_id: int, trash_id: int, original_name: str) -> str:
     ext = original_name.rsplit(".", 1)[-1] if "." in original_name else "jpg"
     return f"violation_P{person_id}_T{trash_id}_{uuid.uuid4().hex[:6]}.{ext}"
 
-def _log_violation(person_id, trash_id, v_type, score, timestamp, image_url):
+def _log_violation(person_id, trash_id, v_type, score, timestamp, image_url, video_url=None):
     sep = "=" * 50
     print(f"\n{sep}")
     print("🚨 ĐÃ LƯU VI PHẠM MỚI!")
@@ -200,4 +243,6 @@ def _log_violation(person_id, trash_id, v_type, score, timestamp, image_url):
     print(f"📊 Score         : {score:.4f}")
     print(f"🕐 Thời gian     : {timestamp}")
     print(f"🔗 URL Bằng chứng: {image_url}")
+    if video_url:
+        print(f"URL Video       : {video_url}")
     print(f"{sep}\n")

@@ -1,45 +1,51 @@
 import './ViolationCard.css'
 
 const TYPE_COLOR = {
-  'Đột ngột':       'danger',
-  'Đứng yên':       'warning',
+  'Đột ngột': 'danger',
+  'Đứng yên': 'warning',
   'Bỏ rác tại chỗ': 'accent',
-}
-const TYPE_ICON = {
-  'Đột ngột':       '⚡',
-  'Đứng yên':       '🕒',
-  'Bỏ rác tại chỗ': '🗑️',
 }
 
 export default function ViolationCard({ violation, onImageClick }) {
   const {
     id, person_id, trash_id,
-    violation_type, score, timestamp, evidence_url, created_at,
+    violation_type, score, timestamp, evidence_url, evidence_video_url, created_at,
   } = violation
 
   const color = TYPE_COLOR[violation_type] ?? 'accent'
-  const icon  = TYPE_ICON[violation_type]  ?? '🚨'
+  const hasVideo = Boolean(evidence_video_url)
 
   return (
     <div className={`vcard vcard--${color}`}>
-      {/* Evidence image */}
-      <div
-        className="vcard-img-wrap"
-        onClick={() => evidence_url && onImageClick?.(evidence_url)}
-        title={evidence_url ? 'Nhấp để phóng to' : 'Chưa có ảnh bằng chứng'}
-      >
-        {evidence_url ? (
-          <img src={evidence_url} alt={`Vi phạm #${id}`} className="vcard-img" loading="lazy" />
-        ) : (
-          <div className="vcard-img-placeholder">📷</div>
+      <div className="vcard-media-stack">
+        {hasVideo && (
+          <div className="vcard-video-wrap">
+            <video
+              src={evidence_video_url}
+              className="vcard-video"
+              controls
+              preload="metadata"
+            />
+          </div>
         )}
-        {evidence_url && <div className="vcard-img-overlay">🔍 Phóng to</div>}
+
+        <div
+          className={`vcard-img-wrap ${hasVideo ? 'vcard-img-wrap--thumb' : ''}`}
+          onClick={() => evidence_url && onImageClick?.(evidence_url)}
+          title={evidence_url ? 'Nhấp để phóng to ảnh' : 'Chưa có ảnh bằng chứng'}
+        >
+          {evidence_url ? (
+            <img src={evidence_url} alt={`Vi phạm #${id}`} className="vcard-img" loading="lazy" />
+          ) : (
+            <div className="vcard-img-placeholder">Chưa có ảnh</div>
+          )}
+          {evidence_url && <div className="vcard-img-overlay">Phóng to ảnh</div>}
+        </div>
       </div>
 
-      {/* Body */}
       <div className="vcard-body">
         <div className="vcard-header">
-          <span className={`badge badge-${color}`}>{icon} {violation_type}</span>
+          <span className={`badge badge-${color}`}>{violation_type}</span>
           <span className="vcard-id">#{id}</span>
         </div>
 

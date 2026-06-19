@@ -1,6 +1,8 @@
 .video-panel {
   display: flex;
   flex-direction: column;
+  align-self: center;
+  width: min(100%, 520px);
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -68,7 +70,7 @@
 .canvas-wrapper {
   position: relative;
   width: 100%;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 9 / 16;
   background: #050810;
   overflow: hidden;
 }

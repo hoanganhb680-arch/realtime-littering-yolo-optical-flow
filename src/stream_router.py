@@ -5,12 +5,14 @@ import asyncio
 import json
 import os
 import threading
+from queue import Empty, Queue
 from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import FileResponse
 
 router = APIRouter(tags=["stream"])
+WS_SEND_TIMEOUT = 0.25
 # ------------------------------------------------------------------
 # Connection Manager — quản lý tất cả FE client đang kết nối
 # ------------------------------------------------------------------
@@ -28,7 +30,7 @@ class ConnectionManager:
         dead: list[WebSocket] = []
         for ws in list(self._clients):
             try:
-                await ws.send_bytes(data)
+                await asyncio.wait_for(ws.send_bytes(data), timeout=WS_SEND_TIMEOUT)
             except Exception:
                 dead.append(ws)
         for ws in dead:
@@ -49,10 +51,14 @@ class ConnectionManager:
         return len(self._clients)
 # Singleton dùng chung toàn app
 manager = ConnectionManager()
+
+
+def has_stream_clients() -> bool:
+    return manager.active_count > 0
 # Queue để TrashViolationDetector (luồng sync) đẩy frame vào
 # Main event loop sẽ drain queue này
-frame_queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=10)
-alert_queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=50)
+frame_queue: Queue[bytes] = Queue(maxsize=1)
+alert_queue: Queue[dict] = Queue(maxsize=50)
 
 # ------------------------------------------------------------------
 # Background Detector Thread Management
@@ -111,14 +117,14 @@ async def _queue_broadcaster() -> None:
             try:
                 frame_bytes = frame_queue.get_nowait()
                 await manager.broadcast_bytes(frame_bytes)
-            except asyncio.QueueEmpty:
+            except Empty:
                 break
         # Drain alert queue
         while not alert_queue.empty():
             try:
                 alert = alert_queue.get_nowait()
                 await manager.broadcast_json(alert)
-            except asyncio.QueueEmpty:
+            except Empty:
                 break
         await asyncio.sleep(0.01)   # ~100 Hz poll
 # ------------------------------------------------------------------
@@ -169,16 +175,12 @@ async def stop_stream_api():
 
 @router.get("/api/v1/stream/video")
 async def get_output_video():
-    """Tải file video kết quả H.264 sau khi xử lý xong."""
+    """Tải file video kết quả sau khi xử lý xong."""
     from Config import Config
     cfg = Config()
-    if os.path.exists(cfg.LOCAL_VIDEO_H264):
-        return FileResponse(cfg.LOCAL_VIDEO_H264, media_type="video/mp4", filename="processed_video.mp4")
-    elif os.path.exists(cfg.LOCAL_VIDEO_RAW):
-        # Trả về raw video nếu FFmpeg convert bị lỗi/không chạy
+    if os.path.exists(cfg.LOCAL_VIDEO_RAW):
         return FileResponse(cfg.LOCAL_VIDEO_RAW, media_type="video/mp4", filename="processed_video_raw.mp4")
-    else:
-        raise HTTPException(
-            status_code=404, 
-            detail="Chưa có video kết quả. Vui lòng đợi video chạy hết để hoàn tất kết xuất."
-        )
+    raise HTTPException(
+        status_code=404,
+        detail="Chưa có video kết quả. Vui lòng đợi video chạy hết để hoàn tất kết xuất."
+    )

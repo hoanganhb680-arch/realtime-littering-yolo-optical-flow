@@ -38,7 +38,6 @@ class TrashViolationDetector(DetectorIoMixin, DetectionParsingMixin, TrashLifecy
         self._last_stream_push_at = 0.0
         self._next_synthetic_person_id = 200000
         self._next_synthetic_trash_id = 100000
-        self._evidence_clip_buffer: deque[tuple[float, bytes]] = deque()
         self._last_ownerless_candidate_frame = -10**9
         self._last_pending_reason_log: dict[int, int] = {}
         self._last_camera_wait_log_at = 0.0
@@ -51,7 +50,6 @@ class TrashViolationDetector(DetectorIoMixin, DetectionParsingMixin, TrashLifecy
         print(f"[DETECTOR] Starting model, source={cfg.VIDEO_SOURCE}")
         model = YOLO(cfg.MODEL_PATH)
         track_kwargs = self._build_track_kwargs(is_live)
-        floor_kwargs = self._build_floor_trash_kwargs(is_live)
 
         cap = self._open_capture(is_live)
         out_vid, source_fps = self._init_writer(cap)
@@ -85,7 +83,7 @@ class TrashViolationDetector(DetectorIoMixin, DetectionParsingMixin, TrashLifecy
             frame = self._prepare_frame(frame)
             frame_idx += 1
             curr_gray, annotated = self._process_frame(
-                model, frame, frame_idx, prev_gray, track_kwargs, floor_kwargs
+                model, frame, frame_idx, prev_gray, track_kwargs
             )
 
             if out_vid is not None:
@@ -134,7 +132,6 @@ class TrashViolationDetector(DetectorIoMixin, DetectionParsingMixin, TrashLifecy
             frame_idx: int,
             prev_gray,
             track_kwargs: dict,
-            floor_kwargs: dict | None,
     ):
         curr_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         mog2_alerts = self._motion_detector.get_alerts(frame)
@@ -142,23 +139,13 @@ class TrashViolationDetector(DetectorIoMixin, DetectionParsingMixin, TrashLifecy
         annotated = results[0].plot()
         current_persons, current_trashes = self._parse_detections(results, frame_idx)
 
-        self._augment_persons_from_motion(
-            current_persons, current_trashes, mog2_alerts, frame_idx, frame.shape, annotated
-        )
         self._remember_person_evidence(current_persons, annotated)
-        current_trashes.update(
-            self._detect_floor_trash_candidates(
-                model, frame, annotated, current_trashes, current_persons,
-                mog2_alerts, frame_idx, floor_kwargs
-            )
-        )
 
         self._flow_tracker.update(prev_gray, curr_gray, current_persons)
         self._process_trashes(current_trashes, current_persons, mog2_alerts, annotated, frame_idx)
         self._cleanup_stale_trash(current_trashes, frame_idx)
         self._draw_sticky_trash(annotated, current_trashes, frame_idx)
         self._draw_hud(annotated, frame_idx)
-        self._remember_evidence_frame(annotated)
         return curr_gray, annotated
 
     def _pace_file_mode(self, is_live: bool, started_at: float) -> None:
@@ -176,15 +163,12 @@ class TrashViolationDetector(DetectorIoMixin, DetectionParsingMixin, TrashLifecy
         else:
             print("\nLive stream stopped. Output recording was disabled.")
 
-        if not is_live and out_vid is not None:
-            self._convert_h264()
         if not is_live:
             self._push_alert({
                 "type": "video_ended",
                 "data": {
                     "message": "Video \u0111\u00e3 x\u1eed l\u00fd xong!",
                     "video_raw": self.cfg.LOCAL_VIDEO_RAW,
-                    "video_h264": self.cfg.LOCAL_VIDEO_H264,
                     "total_violations": len(self._logger.violation_log),
                 },
             })

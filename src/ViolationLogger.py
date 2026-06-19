@@ -48,8 +48,11 @@ class ViolationLogger:
         data["status"] = "confirmed"
         owner_id = data["owner_id"]
 
-        if owner_id and not data["is_ambiguous"]:
-            self._save_evidence(t_id, t_center, data, vtype, annotated, current_persons, frame_idx, owner_id)
+        if owner_id is not None and not data["is_ambiguous"]:
+            self._save_evidence(
+                t_id, t_center, data, vtype, annotated, current_persons, frame_idx,
+                owner_id,
+            )
         elif data["is_ambiguous"]:
             self._draw_ambiguous(t_center, annotated)
 
@@ -57,8 +60,20 @@ class ViolationLogger:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _save_evidence(self, t_id, t_center, data, vtype, annotated, current_persons, frame_idx, owner_id):
-        evidence = annotated.copy()
+    def _save_evidence(
+            self,
+            t_id,
+            t_center,
+            data,
+            vtype,
+            annotated,
+            current_persons,
+            frame_idx,
+            owner_id,
+    ):
+        evidence = self._decode_frame(data.get("owner_frame_jpg"))
+        if evidence is None:
+            evidence = annotated.copy()
 
         # Overlay trên ảnh bằng chứng
         cv2.putText(
@@ -87,6 +102,11 @@ class ViolationLogger:
             "local_path": local_path,
         }
         self.violation_log.append(v_data)
+        print(
+            f"[DETECT] violation person={owner_id} trash={t_id} "
+            f"score={data['score']:.4f} frame={frame_idx} file={local_path}",
+            flush=True,
+        )
 
         # Gửi API bất đồng bộ (upload ảnh lên MinIO + lưu vào DB qua POST endpoint)
         self._syncer.send(v_data, local_path)
@@ -99,6 +119,44 @@ class ViolationLogger:
             cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 0, 255), 2,
         )
         cv2.circle(annotated, t_center, 20, (0, 0, 255), 2)
+
+    def save_candidate(
+            self,
+            t_id: int,
+            t_center: tuple[int, int],
+            annotated: np.ndarray,
+            frame_idx: int,
+            reason: str = "owner_none",
+    ) -> None:
+        evidence = annotated.copy()
+        cv2.putText(
+            evidence,
+            f"CANDIDATE: {reason}",
+            (max(5, t_center[0] - 20), max(30, t_center[1] - 30)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.65,
+            (0, 165, 255),
+            2,
+        )
+        cv2.circle(evidence, t_center, 22, (0, 165, 255), 2)
+
+        image_path = os.path.join(
+            self.output_dir,
+            f"candidate_T{t_id}_F{frame_idx}_{reason}.jpg",
+        )
+        cv2.imwrite(image_path, evidence)
+        print(
+            f"[CANDIDATE] trash={t_id} reason={reason} frame={frame_idx} "
+            f"file={image_path}",
+            flush=True,
+        )
+
+    @staticmethod
+    def _decode_frame(jpg_bytes: bytes | None) -> np.ndarray | None:
+        if not jpg_bytes:
+            return None
+        arr = np.frombuffer(jpg_bytes, dtype=np.uint8)
+        return cv2.imdecode(arr, cv2.IMREAD_COLOR)
 
     @staticmethod
     def _draw_ambiguous(t_center, annotated):

@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS violations (
     score          REAL    NOT NULL,
     timestamp      TEXT    NOT NULL,
     evidence_url   TEXT    NOT NULL,
+    evidence_video_url TEXT,
     created_at     TEXT    DEFAULT (datetime('now','localtime'))
 );
 """
@@ -27,6 +28,9 @@ def init_db() -> None:
     """Tạo bảng nếu chưa tồn tại."""
     with _conn() as conn:
         conn.execute(_CREATE_TABLE)
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(violations)").fetchall()}
+        if "evidence_video_url" not in columns:
+            conn.execute("ALTER TABLE violations ADD COLUMN evidence_video_url TEXT")
 
 @contextmanager
 def _conn():
@@ -49,13 +53,19 @@ def insert_violation(
     score: float,
     timestamp: str,
     evidence_url: str,
+    evidence_video_url: str | None = None,
 ) -> int:
     sql = """
-    INSERT INTO violations (person_id, trash_id, violation_type, score, timestamp, evidence_url)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO violations (
+        person_id, trash_id, violation_type, score, timestamp, evidence_url, evidence_video_url
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?)
     """
     with _conn() as conn:
-        cur = conn.execute(sql, (person_id, trash_id, violation_type, score, timestamp, evidence_url))
+        cur = conn.execute(
+            sql,
+            (person_id, trash_id, violation_type, score, timestamp, evidence_url, evidence_video_url),
+        )
         return cur.lastrowid
 
 def update_violation(
@@ -65,14 +75,18 @@ def update_violation(
     score: float,
     timestamp: str,
     evidence_url: str,
+    evidence_video_url: str | None = None,
 ) -> None:
     sql = """
     UPDATE violations
-    SET trash_id = ?, violation_type = ?, score = ?, timestamp = ?, evidence_url = ?
+    SET trash_id = ?, violation_type = ?, score = ?, timestamp = ?, evidence_url = ?, evidence_video_url = ?
     WHERE id = ?
     """
     with _conn() as conn:
-        conn.execute(sql, (trash_id, violation_type, score, timestamp, evidence_url, row_id))
+        conn.execute(
+            sql,
+            (trash_id, violation_type, score, timestamp, evidence_url, evidence_video_url, row_id),
+        )
 
 # ------------------------------------------------------------------
 # Read
@@ -80,7 +94,7 @@ def update_violation(
 
 def get_all_violations(limit: int = 200, offset: int = 0) -> list[dict]:
     sql = """
-    SELECT id, person_id, trash_id, violation_type, score, timestamp, evidence_url, created_at
+    SELECT id, person_id, trash_id, violation_type, score, timestamp, evidence_url, evidence_video_url, created_at
     FROM violations
     ORDER BY id DESC
     LIMIT ? OFFSET ?

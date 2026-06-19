@@ -7,9 +7,13 @@ import urllib.request
 import socket
 import sys
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 # ══════════════════════════════════════════════
 # ← ĐỔI 2 DÒNG NÀY TRƯỚC KHI CHẠY
-IP   = "192.168.31.115"   # IP điện thoại (xem trong app IP Webcam)
+IP   = "192.168.0.108"   # IP điện thoại (xem trong app IP Webcam)
 PORT = 8080             # Port (mặc định 8080)
 # ══════════════════════════════════════════════
 
@@ -91,8 +95,8 @@ def print_summary(working_url):
         print(f"  ✅ Camera kết nối thành công!")
         print(f"  URL: {working_url}")
         print()
-        print(f"  Nếu là RTSP → trong Config.py đổi SOURCE_MODE thành ip_camera")
-        print(f"  và thêm dòng IP_CAM_RTSP = True (xem ghi chú)")
+        print(f"  Nếu muốn dùng RTSP → trong Config.py đặt IP_CAM_PROTOCOL = \"rtsp\"")
+        print(f"  Nếu dùng MJPEG hiện tại → giữ IP_CAM_PROTOCOL = \"mjpeg\"")
     else:
         print("  ❌ Không kết nối được. Nguyên nhân phổ biến:")
         print()

@@ -102,12 +102,22 @@ class OwnershipScorer:
         )
 
         scores: dict[int, float] = {}
-        for p_id, (cx, cy) in current_persons.items():
+        recent_history_ids = {
+            p_id
+            for p_id, hist in p_history.items()
+            if hist and (current_frame - self._entry_frame(hist[-1])) <= self.history_frames
+        }
+        candidate_ids = set(current_persons) | recent_history_ids
+
+        for p_id in candidate_ids:
             if p_id in p_history and p_history[p_id]:
                 s = self.compute(trash_center, p_id, p_history[p_id], current_frame, flow_vecs)
-            else:
+            elif p_id in current_persons:
+                cx, cy = current_persons[p_id]
                 dist = math.hypot(cx - trash_center[0], cy - trash_center[1])
                 s = (1.0 - dist / self.spawn_radius) * 0.7 if dist < self.spawn_radius else 0.0
+            else:
+                s = 0.0
 
             if mog2_near and s > 0:
                 s = min(1.0, s * 1.15)
@@ -136,19 +146,21 @@ class OwnershipScorer:
     @staticmethod
     def _nearest(positions, tx, ty, current_frame):
         min_dist, closest_offset = float("inf"), 0
-        for cx, cy, fidx in positions:
-            d = math.hypot(cx - tx, cy - ty)
-            if d < min_dist:
-                min_dist = d
-                closest_offset = current_frame - fidx
+        for entry in positions:
+            fidx = OwnershipScorer._entry_frame(entry)
+            for cx, cy in OwnershipScorer._entry_points(entry):
+                d = math.hypot(cx - tx, cy - ty)
+                if d < min_dist:
+                    min_dist = d
+                    closest_offset = current_frame - fidx
         return min_dist, closest_offset
 
     @staticmethod
     def _direction_score(positions, tx, ty) -> float:
         if len(positions) < 3:
             return 0.0
-        recent = positions[-1]
-        mid    = positions[max(0, len(positions) // 2)]
+        recent = OwnershipScorer._entry_anchor(positions[-1])
+        mid    = OwnershipScorer._entry_anchor(positions[max(0, len(positions) // 2)])
         move   = np.array([recent[0] - mid[0], recent[1] - mid[1]], dtype=float)
         m_dist = np.linalg.norm(move)
         if m_dist <= 2:
@@ -171,9 +183,32 @@ class OwnershipScorer:
         if flow_mag <= 0.5:
             return 0.0
         flow_n = np.array([avg_vx, avg_vy]) / flow_mag
-        latest = positions[-1]
+        latest = OwnershipScorer._entry_anchor(positions[-1])
         away   = np.array([latest[0] - tx, latest[1] - ty], dtype=float)
         a_mag  = np.linalg.norm(away)
         if a_mag <= 1:
             return 0.0
         return max(0.0, float(np.dot(flow_n, away / a_mag)))
+
+    @staticmethod
+    def _entry_anchor(entry) -> tuple[float, float]:
+        if isinstance(entry, dict):
+            anchor = entry.get("anchor", (0.0, 0.0))
+            return float(anchor[0]), float(anchor[1])
+        return float(entry[0]), float(entry[1])
+
+    @staticmethod
+    def _entry_frame(entry) -> int:
+        if isinstance(entry, dict):
+            return int(entry.get("frame", 0))
+        return int(entry[2]) if len(entry) >= 3 else 0
+
+    @staticmethod
+    def _entry_points(entry) -> list[tuple[float, float]]:
+        if isinstance(entry, dict):
+            points = entry.get("points") or [entry.get("anchor", (0.0, 0.0))]
+        elif len(entry) >= 4 and entry[3]:
+            points = entry[3]
+        else:
+            points = [OwnershipScorer._entry_anchor(entry)]
+        return [(float(x), float(y)) for x, y in points]
