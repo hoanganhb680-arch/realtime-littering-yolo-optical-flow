@@ -1,6 +1,6 @@
-# Trash Violation Detection System
+# Real-Time Littering Detection with YOLO and Optical Flow
 
-Full-stack system for detecting littering behavior from video or IP camera streams. The backend runs a YOLO-based detector, records confirmed violations in SQLite, and exposes REST/WebSocket APIs. The frontend provides a React dashboard for live video, alerts, history, and evidence review.
+Full-stack computer vision system for detecting littering behavior from video or IP camera streams. The backend combines YOLO object detection, motion analysis, optical flow tracking, and ownership scoring, then records confirmed violations in SQLite and exposes REST/WebSocket APIs. The frontend provides a React dashboard for live video, alerts, history, and evidence review.
 
 ## Features
 
@@ -92,4 +92,3 @@ npm run build
 cd ..
 python -m compileall src
 ```
-
