@@ -7,6 +7,8 @@ from collections import deque
 
 class DetectionParsingMixin:
     """Turn model outputs and motion blobs into stable person/trash ids."""
+
+    # Chuyển output YOLO/ByteTrack thành current_persons/current_trashes.
     def _parse_detections(
             self, results, frame_idx: int
     ) -> tuple[dict[int, tuple[int, int]], dict[int, tuple[int, int]]]:
@@ -52,6 +54,7 @@ class DetectionParsingMixin:
                 current_trashes[oid] = (cx, cy)
         return current_persons, current_trashes
 
+    # Lọc bbox người quá yếu/quá nhỏ để tránh đưa nhiễu vào lịch sử.
     def _is_valid_person_box(self, box, conf, results) -> bool:
         if float(conf) < float(getattr(self.cfg, "LIVE_PERSON_CONF", 0.0)):
             return False
@@ -64,12 +67,14 @@ class DetectionParsingMixin:
             return False
         return True
 
+    # Lấy điểm neo gần chân người và điểm đáy bbox để so với rác.
     def _person_points_from_box(self, box, frame_shape) -> tuple[tuple[int, int], list[tuple[int, int]]]:
         x1, y1, x2, y2 = [float(v) for v in box]
         h, w = frame_shape[:2]
         bh = max(1.0, y2 - y1)
         cx = (x1 + x2) / 2.0
 
+        # Ép tọa độ điểm nằm trong biên frame.
         def clamp_point(px, py) -> tuple[int, int]:
             return (
                 max(0, min(w - 1, int(px))),
@@ -81,6 +86,7 @@ class DetectionParsingMixin:
         points = [lower] if foot == lower else [lower, foot]
         return lower, points
 
+    # Tạo một bản ghi lịch sử vị trí người tại frame hiện tại.
     @staticmethod
     def _make_person_history_entry(
             anchor: tuple[int, int],
@@ -93,6 +99,7 @@ class DetectionParsingMixin:
             "frame": int(frame_idx),
         }
 
+    # Lấy điểm neo chính từ một entry lịch sử người.
     @staticmethod
     def _history_entry_anchor(entry) -> tuple[int, int]:
         if isinstance(entry, dict):
@@ -100,12 +107,14 @@ class DetectionParsingMixin:
             return int(anchor[0]), int(anchor[1])
         return int(entry[0]), int(entry[1])
 
+    # Lấy frame_idx từ một entry lịch sử người.
     @staticmethod
     def _history_entry_frame(entry) -> int:
         if isinstance(entry, dict):
             return int(entry.get("frame", 0))
         return int(entry[2]) if len(entry) >= 3 else 0
 
+    # Lấy toàn bộ điểm đại diện của người trong một entry lịch sử.
     @staticmethod
     def _history_entry_points(entry) -> list[tuple[int, int]]:
         if isinstance(entry, dict):
@@ -116,6 +125,7 @@ class DetectionParsingMixin:
             points = [DetectionParsingMixin._history_entry_anchor(entry)]
         return [(int(x), int(y)) for x, y in points]
 
+    # Tìm khoảng cách gần nhất từ một tâm rác tới lịch sử điểm chân người.
     def _nearest_history_distance(
             self,
             center: tuple[int, int],
@@ -135,6 +145,7 @@ class DetectionParsingMixin:
                     best_dist, best_frame = dist, entry_frame
         return best_dist, best_frame
 
+    # Chọn final person_id: ưu tiên ByteTrack, fallback bằng khoảng cách lịch sử.
     def _resolve_person_id(
             self,
             raw_id,
@@ -142,6 +153,13 @@ class DetectionParsingMixin:
             frame_idx: int,
             current_persons: dict[int, tuple[int, int]],
     ) -> int:
+        # ByteTrack already provides the ID drawn on Ultralytics' annotated frame.
+        # Keep that ID when it is available so violation logs match the visible bbox label.
+        if raw_id is not None:
+            oid = int(raw_id)
+            if oid not in current_persons:
+                return oid
+
         match_radius = float(getattr(self.cfg, "PERSON_ID_MATCH_RADIUS", 160))
         best_id, best_dist = None, float("inf")
         for pid, hist in self._person_history.items():
@@ -156,14 +174,11 @@ class DetectionParsingMixin:
                 best_id, best_dist = pid, dist
         if best_id is not None:
             return best_id
-        if raw_id is not None:
-            oid = int(raw_id)
-            if oid not in current_persons:
-                return oid
         oid = self._next_synthetic_person_id
         self._next_synthetic_person_id += 1
         return oid
 
+    # Chọn final trash_id: ưu tiên registry gần vị trí cũ rồi mới tới raw ID.
     def _resolve_trash_id(
             self,
             raw_id,

@@ -17,6 +17,8 @@ except ImportError:
 
 class DetectorIoMixin:
     """Camera/video runtime, streaming, and output helpers."""
+
+    # Tạo bộ tham số truyền vào YOLO.track, gồm imgsz/conf/iou và ByteTrack.
     def _build_track_kwargs(self, is_live: bool) -> dict:
         cfg = self.cfg
         kwargs = {
@@ -34,6 +36,7 @@ class DetectorIoMixin:
             kwargs["half"] = True
         return kwargs
 
+    # Chọn CPU/GPU và half precision phù hợp với máy đang chạy.
     def _resolve_yolo_runtime(self) -> tuple[str | int | None, bool]:
         device_cfg = str(getattr(self.cfg, "YOLO_DEVICE", "auto")).strip().lower()
         half_cfg = bool(getattr(self.cfg, "YOLO_HALF", True))
@@ -47,6 +50,7 @@ class DetectorIoMixin:
             pass
         return "cpu", False
 
+    # Giới hạn tốc độ xử lý camera live để tránh quá tải CPU/GPU.
     def _pace_live_loop(self) -> None:
         target_fps = float(getattr(self.cfg, "LIVE_TARGET_FPS", 0) or 0)
         if target_fps <= 0:
@@ -59,6 +63,7 @@ class DetectorIoMixin:
             now = time.monotonic()
         self._last_live_process_at = now
 
+    # In log chờ camera nhưng có cooldown để không spam terminal.
     def _log_camera_wait(self, source) -> None:
         now = time.monotonic()
         if now - self._last_camera_wait_log_at < 5.0:
@@ -66,12 +71,14 @@ class DetectorIoMixin:
         self._last_camera_wait_log_at = now
         print(f"[LIVE] Waiting for camera/reconnect: {source}", flush=True)
 
+    # Chuẩn bị frame trước pipeline: xoay/resize nếu là live camera.
     def _prepare_frame(self, frame: np.ndarray) -> np.ndarray:
         frame = self._orient_frame(frame)
         if self.cfg.IS_LIVE:
             frame = self._resize_for_processing(frame)
         return frame
 
+    # Resize frame live về cạnh tối đa cho phép để giảm độ trễ xử lý.
     def _resize_for_processing(self, frame: np.ndarray) -> np.ndarray:
         max_side = int(getattr(self.cfg, "LIVE_PROCESS_MAX_SIDE", 0) or 0)
         if max_side <= 0:
@@ -84,6 +91,7 @@ class DetectorIoMixin:
         new_size = (max(1, int(w * scale)), max(1, int(h * scale)))
         return cv2.resize(frame, new_size, interpolation=cv2.INTER_AREA)
 
+    # Encode frame đã vẽ bbox rồi đẩy lên frontend qua queue.
     def _push_frame(self, annotated: np.ndarray) -> None:
         """Encode frame thành JPEG và đẩy vào queue (bỏ qua nếu queue đầy)."""
         if not _STREAM_ENABLED:
@@ -107,6 +115,7 @@ class DetectorIoMixin:
             except Exception:
                 pass  # Queue đầy → bỏ frame này
 
+    # Resize frame stream về chiều cao tối đa để trình duyệt decode nhẹ hơn.
     def _resize_for_stream(self, frame: np.ndarray) -> np.ndarray:
         max_h = getattr(self.cfg, "STREAM_MAX_HEIGHT", 0)
         if not max_h or frame.shape[0] <= max_h:
@@ -115,6 +124,7 @@ class DetectorIoMixin:
         new_w = max(1, int(frame.shape[1] * scale))
         return cv2.resize(frame, (new_w, max_h), interpolation=cv2.INTER_AREA)
 
+    # Đẩy sự kiện cảnh báo/vi phạm lên websocket queue cho frontend.
     @staticmethod
     def _push_alert(alert_payload: dict) -> None:
         """Đẩy alert JSON vào queue."""
@@ -125,6 +135,7 @@ class DetectorIoMixin:
         except Exception:
             pass
 
+    # Kiểm tra model và nguồn video local có tồn tại trước khi chạy.
     def _validate_paths(self) -> None:
         # Chỉ kiểm tra model; nguồn video có thể là camera (int) hoặc camera IP (RTSP/HTTP) nên không check tồn tại file cục bộ
         if not os.path.exists(self.cfg.MODEL_PATH):
@@ -133,6 +144,7 @@ class DetectorIoMixin:
             if not os.path.exists(self.cfg.VIDEO_SOURCE):
                 raise FileNotFoundError(f"❌ Không tìm thấy video tại {self.cfg.VIDEO_SOURCE}")
 
+    # Khởi tạo VideoWriter để lưu video annotated trong file mode.
     def _init_writer(self, cap) -> tuple[cv2.VideoWriter | None, float]:
         w   = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         h   = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -147,6 +159,7 @@ class DetectorIoMixin:
         )
         return writer, fps
 
+    # Xoay frame live về đúng hướng portrait/landscape theo cấu hình.
     def _orient_frame(self, frame: np.ndarray) -> np.ndarray:
         if not self.cfg.IS_LIVE:
             return frame

@@ -108,6 +108,24 @@ def count_violations() -> int:
         row = conn.execute("SELECT COUNT(*) as cnt FROM violations").fetchone()
     return row["cnt"]
 
+def get_highest_violations_by_person() -> list[dict]:
+    """Lay moi person_id mot vi pham co score cao nhat de khoi phuc session realtime."""
+    sql = """
+    SELECT id, person_id, trash_id, violation_type, score, timestamp,
+           evidence_url, evidence_video_url, created_at
+    FROM violations
+    ORDER BY person_id ASC, score DESC, id DESC
+    """
+    best_by_person: dict[int, dict] = {}
+    with _conn() as conn:
+        rows = conn.execute(sql).fetchall()
+    for row in rows:
+        data = dict(row)
+        person_id = int(data["person_id"])
+        if person_id not in best_by_person:
+            best_by_person[person_id] = data
+    return list(best_by_person.values())
+
 def clear_all_violations() -> None:
     """Xóa sạch bảng violations."""
     with _conn() as conn:

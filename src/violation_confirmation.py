@@ -2,6 +2,7 @@
 # VIOLATION CONFIRMATION / DRAWING HELPERS
 # ==============================================================================
 import cv2
+import math
 from collections import deque
 import numpy as np
 
@@ -9,6 +10,7 @@ import numpy as np
 class ViolationConfirmationMixin:
     """Decide when a tracked trash becomes a violation and update the UI overlay."""
 
+    # Thử xác nhận rác thành vi phạm; nếu chưa đủ điều kiện thì log lý do pending.
     def _try_confirm(self, t_id, t_center, data, annotated, current_persons, frame_idx):
         status = self._confirmation_status(t_center, data, annotated, current_persons, frame_idx)
         if status["violation_type"] is None:
@@ -23,7 +25,7 @@ class ViolationConfirmationMixin:
                 return
             self._person_highest_score[owner_id] = score
 
-        self._logger.confirm_and_log(
+        evidence_url = self._logger.confirm_and_log(
             t_id, t_center, data, status["violation_type"], annotated, current_persons, frame_idx,
         )
         self._push_alert({
@@ -35,9 +37,11 @@ class ViolationConfirmationMixin:
                 "score": round(data["score"], 4),
                 "timestamp": data["spawn_time"],
                 "frame": frame_idx,
+                "evidenceUrl": evidence_url,
             },
         })
 
+    # Tính toàn bộ điều kiện chung và chọn loại vi phạm nếu đủ ngưỡng.
     def _confirmation_status(self, t_center, data, annotated, current_persons, frame_idx) -> dict:
         cfg = self.cfg
         owner_id = data.get("owner_id")
@@ -56,7 +60,9 @@ class ViolationConfirmationMixin:
             and owner_seen_count >= getattr(cfg, "MIN_OWNER_SEEN_FRAMES", 1)
             and self._owner_has_motion(self._person_history.get(owner_id, deque()))
         )
-        ground_condition = self._is_ground_trash(t_center, annotated)
+        ground_condition = self._is_ground_trash(
+            t_center, annotated, owner_id, frame_idx
+        )
         common_ok = (
             data["score"] >= cfg.MIN_SCORE
             and owner_seen_enough
@@ -100,6 +106,7 @@ class ViolationConfirmationMixin:
             "ground_condition": ground_condition,
         }
 
+    # In lý do rác vẫn pending để debug tại sao chưa xác nhận được.
     def _log_pending_reason(
             self,
             t_id: int,
@@ -145,12 +152,41 @@ class ViolationConfirmationMixin:
             flush=True,
         )
 
-    def _is_ground_trash(self, t_center: tuple[int, int], annotated: np.ndarray) -> bool:
+    # Kiểm tra rác có nằm ở mặt đất hoặc gần quỹ đạo chân owner không.
+    def _is_ground_trash(
+            self,
+            t_center: tuple[int, int],
+            annotated: np.ndarray,
+            owner_id: int | None = None,
+            frame_idx: int = 0,
+    ) -> bool:
         min_y_ratio = float(getattr(self.cfg, "VIOLATION_GROUND_MIN_Y_RATIO", 0.0) or 0.0)
-        if min_y_ratio <= 0:
+        if min_y_ratio <= 0 or t_center[1] >= int(annotated.shape[0] * min_y_ratio):
             return True
-        return t_center[1] >= int(annotated.shape[0] * min_y_ratio)
 
+        if owner_id is None:
+            return False
+        history = self._person_history.get(owner_id, deque())
+        max_distance = float(getattr(self.cfg, "GROUND_OWNER_FOOT_MAX_DISTANCE", 0) or 0)
+        max_vertical = annotated.shape[0] * float(
+            getattr(self.cfg, "GROUND_OWNER_FOOT_MAX_VERTICAL_RATIO", 0.0) or 0.0
+        )
+        if max_distance <= 0 or max_vertical <= 0:
+            return False
+
+        for entry in history:
+            age = frame_idx - self._history_entry_frame(entry)
+            if age < 0 or age > self.cfg.HISTORY_FRAMES:
+                continue
+            for px, py in self._history_entry_points(entry):
+                if (
+                    abs(t_center[1] - py) <= max_vertical
+                    and math.hypot(t_center[0] - px, t_center[1] - py) <= max_distance
+                ):
+                    return True
+        return False
+
+    # Xóa rác mất quá lâu khỏi registry để tránh bộ nhớ/phán đoán cũ.
     def _cleanup_stale_trash(self, current_trashes: dict, frame_idx: int) -> None:
         stale = [
             tid for tid, tdata in self._trash_registry.items()
@@ -160,6 +196,7 @@ class ViolationConfirmationMixin:
         for tid in stale:
             del self._trash_registry[tid]
 
+    # Vẽ tạm rác vừa mất bbox để giao diện không nhấp nháy quá mạnh.
     def _draw_sticky_trash(self, annotated: np.ndarray, current_trashes: dict, frame_idx: int) -> None:
         max_missed = int(getattr(self.cfg, "DRAW_STALE_TRASH_FRAMES", 0) or 0)
         if max_missed <= 0:
@@ -186,6 +223,7 @@ class ViolationConfirmationMixin:
                 1,
             )
 
+    # Vẽ HUD số frame và số vi phạm lên frame annotated.
     def _draw_hud(self, annotated: np.ndarray, frame_idx: int) -> None:
         cv2.putText(
             annotated,

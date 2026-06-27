@@ -13,7 +13,7 @@ const TYPE_ICON = {
   'Bỏ rác tại chỗ': '🗑️',
 }
 
-export default function AlertFeed({ alerts = [], onClear, onDismiss }) {
+export default function AlertFeed({ alerts = [], onClear, onDismiss, onImageClick }) {
   return (
     <div className="alert-feed">
       <div className="alert-header">
@@ -40,6 +40,7 @@ export default function AlertFeed({ alerts = [], onClear, onDismiss }) {
               const color = TYPE_COLOR[alert.violationType] ?? 'accent'
               const icon  = TYPE_ICON[alert.violationType]  ?? '🚨'
               const itemId = alert.id ?? idx
+              const evidenceUrl = alert.evidenceUrl ?? alert.evidence_url
               return (
                 <motion.div
                   key={itemId}
@@ -50,6 +51,18 @@ export default function AlertFeed({ alerts = [], onClear, onDismiss }) {
                   transition={{ type: 'spring', stiffness: 280, damping: 22 }}
                   layout
                 >
+                  {evidenceUrl && (
+                    <button
+                      className="alert-thumb"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onImageClick?.(evidenceUrl)
+                      }}
+                      title="Xem ảnh bằng chứng"
+                    >
+                      <img src={evidenceUrl} alt="Ảnh bằng chứng" />
+                    </button>
+                  )}
                   <div className="alert-icon">{icon}</div>
                   <div className="alert-body">
                     <div className="alert-type">{alert.violationType}</div>
@@ -61,6 +74,17 @@ export default function AlertFeed({ alerts = [], onClear, onDismiss }) {
                       </span>
                     </div>
                     <div className="alert-time">{alert.timestamp}</div>
+                    {evidenceUrl && (
+                      <button
+                        className="alert-view-image"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onImageClick?.(evidenceUrl)
+                        }}
+                      >
+                        Xem ảnh xác nhận
+                      </button>
+                    )}
                   </div>
                   {onDismiss && (
                     <button 

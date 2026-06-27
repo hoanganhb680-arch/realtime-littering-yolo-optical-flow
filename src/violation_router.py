@@ -16,10 +16,24 @@ _storage = MinIOStorage()
 # personId -> {"db_row_id": int, "score": float, "minio_filename": str}
 session_highest_violations = {}
 
-def reset_session_violations():
+def reset_session_violations(clear_db: bool = True, restore_from_db: bool = False):
     """Xóa lịch sử phiên chạy khi khởi động lại stream."""
     global session_highest_violations
     session_highest_violations.clear()
+    if clear_db:
+        _db.clear_all_violations()
+        print("🧹 Đã làm sạch lịch sử session vi phạm ở Backend.")
+        return
+    if restore_from_db:
+        for row in _db.get_highest_violations_by_person():
+            session_highest_violations[int(row["person_id"])] = {
+                "db_row_id": int(row["id"]),
+                "score": float(row["score"]),
+                "minio_filename": "",
+                "video_url": row.get("evidence_video_url"),
+            }
+        print(f"♻️  Đã khôi phục {len(session_highest_violations)} vi phạm từ SQLite cho phiên realtime.")
+        return
     print("🧹 Đã làm sạch lịch sử session vi phạm ở Backend.")
 
 # ------------------------------------------------------------------
@@ -199,7 +213,7 @@ async def clear_violations():
                 pass
                 
         # 3. Reset lịch sử phiên gộp ở backend
-        reset_session_violations()
+        reset_session_violations(clear_db=False)
         
         # 4. Xóa sạch bucket MinIO để đồng bộ
         try:

@@ -77,11 +77,13 @@ def start_detector_thread() -> bool:
         from TrashViolationDetector import TrashViolationDetector
         from Config import Config
         from violation_router import reset_session_violations
+        cfg = Config()
+        is_file_mode = cfg.SOURCE_MODE == "file"
         
         # Reset lại bộ nhớ session các vi phạm ở backend
-        reset_session_violations()
+        reset_session_violations(clear_db=is_file_mode, restore_from_db=not is_file_mode)
         
-        detector_instance = TrashViolationDetector(cfg=Config())
+        detector_instance = TrashViolationDetector(cfg=cfg)
         
         def _run():
             try:

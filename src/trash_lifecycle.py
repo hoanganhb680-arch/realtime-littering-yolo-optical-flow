@@ -13,6 +13,7 @@ from violation_confirmation import ViolationConfirmationMixin
 class TrashLifecycleMixin(OwnerResolutionMixin, ViolationConfirmationMixin):
     """Track trash candidates from first sighting until confirmation or cleanup."""
 
+    # Xử lý toàn bộ rác trong frame: đăng ký mới, cập nhật cũ, recovery và confirm.
     def _process_trashes(
             self,
             current_trashes: dict,
@@ -40,6 +41,7 @@ class TrashLifecycleMixin(OwnerResolutionMixin, ViolationConfirmationMixin):
             current_trashes, current_persons, mog2_alerts, annotated, frame_idx
         )
 
+    # Đăng ký rác mới xuất hiện và tính owner ban đầu cho rác đó.
     def _register_new_trash(self, t_id, t_center, current_persons, mog2_alerts, annotated, frame_idx):
         owner_id, score, is_ambig = self._find_owner_for_trash(
             t_center, current_persons, mog2_alerts, frame_idx
@@ -57,6 +59,7 @@ class TrashLifecycleMixin(OwnerResolutionMixin, ViolationConfirmationMixin):
         if owner_id is None:
             self._save_ownerless_candidate(t_id, t_center, annotated, frame_idx)
 
+    # Tạo record pending chứa owner, score, vị trí, counters và bằng chứng rác.
     def _new_trash_record(
             self,
             owner_id,
@@ -90,6 +93,7 @@ class TrashLifecycleMixin(OwnerResolutionMixin, ViolationConfirmationMixin):
             "status": "pending",
         }
 
+    # Cập nhật rác đã tồn tại: confirm_ctr, stationary và owner hiện tại.
     def _update_trash_state(self, data, t_center, current_persons, mog2_alerts, annotated, frame_idx):
         data["confirm_ctr"] += 1
         data["seen_count"] = data.get("seen_count", 1) + 1
@@ -101,6 +105,7 @@ class TrashLifecycleMixin(OwnerResolutionMixin, ViolationConfirmationMixin):
         if self._should_reevaluate_owner(data, owner_id, owner_in_scene):
             self._reevaluate_owner(data, t_center, current_persons, mog2_alerts, annotated, frame_idx)
 
+    # Cập nhật vị trí mới nhất của rác và đếm rác có đứng yên không.
     def _mark_latest_trash_position(self, data, t_center) -> bool:
         disp = math.hypot(t_center[0] - data["last_pos"][0], t_center[1] - data["last_pos"][1])
         is_stationary_now = disp < self.cfg.STATIONARY_PX
@@ -108,6 +113,7 @@ class TrashLifecycleMixin(OwnerResolutionMixin, ViolationConfirmationMixin):
         data["last_pos"] = t_center
         return is_stationary_now
 
+    # Quyết định có cần tính lại owner khi thông tin ban đầu chưa chắc không.
     def _should_reevaluate_owner(self, data: dict, owner_id, owner_in_scene: bool) -> bool:
         cfg = self.cfg
         reeval_frames = int(getattr(cfg, "OWNER_REEVAL_FRAMES", cfg.CONFIRM_FRAMES))
@@ -119,6 +125,7 @@ class TrashLifecycleMixin(OwnerResolutionMixin, ViolationConfirmationMixin):
             or not self._owner_is_usable(owner_id)
         )
 
+    # Tính lại owner cho rác và áp dụng nếu kết quả tốt hơn.
     def _reevaluate_owner(self, data, t_center, current_persons, mog2_alerts, annotated, frame_idx):
         new_owner, new_score, new_ambig = self._find_owner_for_trash(
             t_center, current_persons, mog2_alerts, frame_idx
@@ -129,6 +136,7 @@ class TrashLifecycleMixin(OwnerResolutionMixin, ViolationConfirmationMixin):
                 current_persons, annotated, frame_idx
             )
 
+    # Cứu rác vừa mất bbox bằng owner/MOG2/last_pos để lifecycle không bị đứt.
     def _recover_recently_lost_trashes(
             self,
             current_trashes: dict,
@@ -150,7 +158,7 @@ class TrashLifecycleMixin(OwnerResolutionMixin, ViolationConfirmationMixin):
                 continue
 
             recovered_pos = self._recover_lost_trash_position(
-                data, current_persons, mog2_alerts, min_ground_y
+                data, current_persons, mog2_alerts, min_ground_y, annotated, frame_idx
             )
             if recovered_pos is None:
                 continue
@@ -165,6 +173,7 @@ class TrashLifecycleMixin(OwnerResolutionMixin, ViolationConfirmationMixin):
                 )
             self._try_confirm(t_id, recovered_pos, data, annotated, current_persons, frame_idx)
 
+    # Kiểm tra rác có đủ điều kiện để thử phục hồi khi YOLO mất bbox không.
     def _can_recover_trash(
             self,
             t_id,
@@ -176,12 +185,23 @@ class TrashLifecycleMixin(OwnerResolutionMixin, ViolationConfirmationMixin):
     ) -> bool:
         if t_id in current_trashes or data.get("status") == "confirmed":
             return False
-        if data.get("seen_count", 0) < min_seen:
+        seen_count = data.get("seen_count", 0)
+        if seen_count < min_seen and not self._can_recover_strong_single_seen_trash(data):
             return False
         last_seen = data.get("last_seen_frame", data.get("spawn_frame", frame_idx))
         missed = frame_idx - last_seen
         return 0 < missed <= max_missed
 
+    # Cho phép cứu rác chỉ thấy 1 frame nếu owner rõ, score cao và không mơ hồ.
+    def _can_recover_strong_single_seen_trash(self, data: dict) -> bool:
+        return (
+            data.get("seen_count", 0) >= 1
+            and data.get("owner_id") is not None
+            and not data.get("is_ambiguous")
+            and data.get("score", 0.0) >= self.cfg.REEVAL_SCORE_THRESH
+        )
+
+    # Kiểm tra rác mất bbox có cần tính lại owner không.
     def _lost_trash_needs_owner(self, data: dict) -> bool:
         return (
             data.get("owner_id") is None
@@ -190,12 +210,15 @@ class TrashLifecycleMixin(OwnerResolutionMixin, ViolationConfirmationMixin):
             or not self._owner_is_usable(data.get("owner_id"))
         )
 
+    # Tìm vị trí tạm cho rác bị mất bằng chân owner, MOG2 hoặc last_pos.
     def _recover_lost_trash_position(
             self,
             data: dict,
             current_persons: dict[int, tuple[int, int]],
             mog2_alerts: list,
             min_ground_y: int,
+            annotated: np.ndarray,
+            frame_idx: int,
     ) -> tuple[int, int] | None:
         last_pos = data.get("last_pos")
         if not last_pos:
@@ -211,10 +234,14 @@ class TrashLifecycleMixin(OwnerResolutionMixin, ViolationConfirmationMixin):
         if alert_pos is not None:
             return alert_pos
 
-        if ly >= min_ground_y:
+        last_pos = (int(lx), int(ly))
+        if ly >= min_ground_y or self._is_ground_trash(
+            last_pos, annotated, data.get("owner_id"), frame_idx
+        ):
             return int(lx), int(ly)
         return None
 
+    # Nếu owner còn trong scene, kéo vị trí rác mất về điểm chân owner gần last_pos.
     def _snap_lost_trash_to_owner(
             self,
             data: dict,
@@ -236,6 +263,7 @@ class TrashLifecycleMixin(OwnerResolutionMixin, ViolationConfirmationMixin):
             return None
         return min(eligible, key=lambda point: math.hypot(point[0] - lx, point[1] - ly))
 
+    # Nếu có MOG2 motion gần rác cũ, dùng tâm motion làm vị trí phục hồi.
     @staticmethod
     def _snap_lost_trash_to_motion(
             lx,

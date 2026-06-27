@@ -10,6 +10,7 @@ import numpy as np
 class OwnerResolutionMixin:
     """Resolve who owns a trash candidate and keep evidence frames for that owner."""
 
+    # Kiểm tra owner có đủ ổn định: có ID, đủ seen và có chuyển động thật.
     def _owner_is_usable(self, owner_id) -> bool:
         if owner_id is None:
             return False
@@ -18,11 +19,13 @@ class OwnerResolutionMixin:
             return False
         return self._owner_has_motion(self._person_history.get(owner_id, deque()))
 
+    # Encode frame annotated thành JPEG bytes để lưu bằng chứng owner.
     def _encode_evidence_frame(self, annotated: np.ndarray) -> bytes | None:
         quality = int(getattr(self.cfg, "EVIDENCE_JPEG_QUALITY", 65))
         ok, buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, quality])
         return buf.tobytes() if ok else None
 
+    # Lưu frame bằng chứng gần nhất cho từng person đang xuất hiện.
     def _remember_person_evidence(
             self,
             current_persons: dict[int, tuple[int, int]],
@@ -36,6 +39,7 @@ class OwnerResolutionMixin:
         for person_id in current_persons:
             self._person_frame_jpg[person_id] = frame_jpg
 
+    # Tìm owner tốt nhất cho rác, nếu cần thì fallback sang người vừa rời khung.
     def _find_owner_for_trash(
             self,
             t_center: tuple[int, int],
@@ -55,6 +59,7 @@ class OwnerResolutionMixin:
             return fallback_owner, fallback_score, fallback_ambig
         return owner_id, score, is_ambig
 
+    # Chọn ảnh bằng chứng phù hợp khi owner còn trong scene hoặc đã rời đi.
     def _owner_evidence_frame(
             self,
             owner_id,
@@ -70,6 +75,7 @@ class OwnerResolutionMixin:
             )
         return self._encode_evidence_frame(annotated) or fallback_jpg
 
+    # Ghi owner/score/ambiguous mới vào record rác và cập nhật trạng thái rời khung.
     def _apply_owner_update(
             self,
             data: dict,
@@ -102,6 +108,7 @@ class OwnerResolutionMixin:
             data["owner_left_frame"] = frame_idx
             data["stationary_after_owner_gone"] = 1
 
+    # Quyết định có nên thay owner cũ bằng owner mới vừa tính lại không.
     def _should_apply_owner_update(self, data: dict, owner_id, score: float, is_ambig: bool) -> bool:
         if owner_id is None:
             return False
@@ -113,6 +120,7 @@ class OwnerResolutionMixin:
             return True
         return score > data.get("score", 0.0)
 
+    # Cập nhật owner còn trong scene hay đã rời đi ở frame hiện tại.
     def _update_owner_presence(
             self,
             data: dict,
@@ -133,6 +141,7 @@ class OwnerResolutionMixin:
             data["stationary_after_owner_gone"] += 1
         return owner_id, owner_in_scene
 
+    # Lưu ảnh debug khi thấy rác nhưng chưa tìm được owner.
     def _save_ownerless_candidate(self, t_id, t_center, annotated, frame_idx) -> None:
         if not getattr(self.cfg, "SAVE_OWNERLESS_CANDIDATES", False):
             return
@@ -148,6 +157,7 @@ class OwnerResolutionMixin:
             reason="owner_none",
         )
 
+    # Tìm owner fallback trong lịch sử gần đây khi owner chính chưa usable.
     def _fallback_recent_owner(
             self,
             t_center: tuple[int, int],
@@ -178,6 +188,7 @@ class OwnerResolutionMixin:
         is_ambig = len(candidates) >= 2 and (best_score - candidates[1][1]) < self.cfg.AMBIGUOUS_MARGIN
         return best_id, best_score, is_ambig
 
+    # Kiểm tra lịch sử owner có di chuyển đủ xa để không phải nhiễu đứng yên.
     def _owner_has_motion(self, hist: deque) -> bool:
         min_motion = float(getattr(self.cfg, "MIN_OWNER_MOTION_PX", 0) or 0)
         if min_motion <= 0 or len(hist) < 2:

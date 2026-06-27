@@ -115,6 +115,7 @@ celerybeat.pid
 # Environments
 .env
 .venv
+.venv*/
 env/
 venv/
 ENV/
@@ -174,3 +175,19 @@ output_h264.mp4
 output.mp4
 temp/
 tmp/
+
+# Large local datasets and generated artifacts
+data_cu1_clean*/
+data_cu1_*.txt
+debug_outputs/
+docx_render_check/
+report_assets_generated/
+report_capture_logs/
+weights/*
+!weights/.gitkeep
+video/*
+!video/.gitkeep
+*.zip
+*.mp4
+*.jpg
+*.jpeg

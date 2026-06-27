@@ -40,8 +40,8 @@ export function useViolations() {
             violation_type: alertData.violationType,
             score: alertData.score,
             timestamp: alertData.timestamp,
-            evidence_url: null,
-            evidence_video_url: null,
+            evidence_url: alertData.evidenceUrl ?? alertData.evidence_url ?? null,
+            evidence_video_url: alertData.evidenceVideoUrl ?? alertData.evidence_video_url ?? null,
             isNew: true,
           }
           return updated
@@ -56,8 +56,8 @@ export function useViolations() {
         violation_type: alertData.violationType,
         score: alertData.score,
         timestamp: alertData.timestamp,
-        evidence_url: null,
-        evidence_video_url: null,
+        evidence_url: alertData.evidenceUrl ?? alertData.evidence_url ?? null,
+        evidence_video_url: alertData.evidenceVideoUrl ?? alertData.evidence_video_url ?? null,
         isNew: true,
       }
       setTotal(t => t + 1)
@@ -81,5 +81,11 @@ export function useViolations() {
     }
   }, [])
 
-  return { violations, total, loading, error, addAlert, refetch: load, clearHistory }
+  const resetLocal = useCallback(() => {
+    setViolations([])
+    setTotal(0)
+    setError(null)
+  }, [])
+
+  return { violations, total, loading, error, addAlert, refetch: load, clearHistory, resetLocal }
 }

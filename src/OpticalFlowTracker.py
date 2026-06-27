@@ -17,6 +17,7 @@ class OpticalFlowTracker:
         flow_vecs : {person_id → deque[(vx, vy)]}          — lịch sử vector vận tốc.
     """
 
+    # Khởi tạo bộ nhớ điểm tracking và lịch sử vector flow theo từng person_id.
     def __init__(
             self,
             lk_params:           dict = Config.LK_PARAMS,
@@ -32,6 +33,7 @@ class OpticalFlowTracker:
     # Public API
     # ------------------------------------------------------------------
 
+    # Cập nhật vector Lucas-Kanade cho các người đang xuất hiện trong frame.
     def update(
             self,
             prev_gray:       np.ndarray | None,
@@ -87,6 +89,7 @@ class OpticalFlowTracker:
     # Internal helpers
     # ------------------------------------------------------------------
 
+    # Xóa điểm optical flow của người đã rời khỏi frame hiện tại.
     def _drop_stale(self, current_persons: dict) -> None:
         """Xoá tracking points của người đã rời khung hình."""
         stale = set(self.flow_pts) - set(current_persons)
@@ -94,6 +97,7 @@ class OpticalFlowTracker:
             self.flow_pts.pop(sid, None)
             self.flow_vecs.pop(sid, None)
 
+    # Khởi tạo điểm LK ban đầu từ điểm neo của từng người.
     def _init_points(self, current_persons: dict) -> None:
         """Khởi tạo điểm tracking cho frame đầu tiên."""
         for p_id, (cx, cy) in current_persons.items():

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 
-const WS_URL = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws/stream`
+const BACKEND_HOST = `${window.location.hostname}:8000`
+const WS_URL = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${BACKEND_HOST}/ws/stream`
 
 export function useVideoStream(canvasRef, { onAlert, onFrame, onVideoEnded } = {}) {
   const callbacksRef = useRef({ onAlert, onFrame, onVideoEnded })

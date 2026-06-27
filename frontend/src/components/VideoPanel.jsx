@@ -3,7 +3,7 @@ import { useVideoStream } from '../hooks/useVideoStream'
 import { restartStream, stopStream } from '../api/violations'
 import './VideoPanel.css'
 
-export default function VideoPanel({ onAlert }) {
+export default function VideoPanel({ onAlert, onStreamRestart, latestViolation }) {
   const canvasRef = useRef(null)
   const [connected, setConnected] = useState(false)
   const [fps, setFps] = useState(0)
@@ -12,6 +12,7 @@ export default function VideoPanel({ onAlert }) {
   const [videoEnded, setVideoEnded] = useState(false)
   const [videoEndedData, setVideoEndedData] = useState(null)
   const [restarting, setRestarting] = useState(false)
+  const latestEvidenceUrl = latestViolation?.evidence_url ?? latestViolation?.evidenceUrl
 
   // FPS counter
   const fpsRef     = useRef({ count: 0, last: 0 })
@@ -40,6 +41,7 @@ export default function VideoPanel({ onAlert }) {
     setVideoEnded(false)
     try {
       await restartStream()
+      onStreamRestart?.()
       setConnected(true)
     } catch (err) {
       console.error("Lỗi khi chạy lại stream:", err)
@@ -76,7 +78,7 @@ export default function VideoPanel({ onAlert }) {
       <div className="video-header">
         <div className="video-title-group">
           <span className={`conn-dot ${connected && !videoEnded ? 'conn-dot--live' : ''}`} />
-          <span className="video-title">Camera Feed</span>
+          <span className="video-title">Video Feed</span>
         </div>
         
         <div className="video-meta">
@@ -103,11 +105,18 @@ export default function VideoPanel({ onAlert }) {
 
       {/* Canvas & overlays */}
       <div className="canvas-wrapper">
-        {!connected && !videoEnded && (
+        {!connected && !videoEnded && latestEvidenceUrl && (
+          <div className="evidence-preview">
+            <img src={latestEvidenceUrl} alt="Anh bang chung moi nhat" />
+            <div className="evidence-preview-badge">Anh xac nhan moi nhat</div>
+          </div>
+        )}
+
+        {!connected && !videoEnded && !latestEvidenceUrl && (
           <div className="canvas-placeholder">
             <div className="placeholder-icon">📡</div>
             <p className="placeholder-title">Đang kết nối tới camera...</p>
-            <p className="placeholder-sub">WebSocket ws://localhost:8000/ws/stream</p>
+            <p className="placeholder-sub">WebSocket ws://127.0.0.1:8000/ws/stream</p>
             <div className="connecting-bars">
               {[...Array(5)].map((_, i) => (
                 <div key={i} className="bar" style={{ animationDelay: `${i * 0.15}s` }} />

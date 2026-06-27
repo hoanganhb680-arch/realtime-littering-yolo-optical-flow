@@ -13,6 +13,7 @@ class MotionDetector:
     Trả về danh sách (cx, cy, area) cho mỗi vùng vượt ngưỡng diện tích.
     """
 
+    # Khởi tạo bộ trừ nền MOG2 và kernel morphology làm sạch mask.
     def __init__(
             self,
             history:   int = Config.MOG2_HISTORY,
@@ -31,6 +32,7 @@ class MotionDetector:
     # Public API
     # ------------------------------------------------------------------
 
+    # Trả về tâm các vùng foreground/chuyển động đủ lớn trong frame.
     def get_alerts(self, frame: np.ndarray) -> list[tuple[int, int, float]]:
         """
         Áp MOG2 + morphology lên `frame`.

@@ -17,6 +17,7 @@ class OwnershipScorer:
         4. recency_score    — thời điểm người gần rác gần đây đến đâu
     """
 
+    # Khởi tạo các ngưỡng/bán kính dùng khi tính điểm chủ rác.
     def __init__(
             self,
             trajectory_radius:  float = Config.TRAJECTORY_RADIUS,
@@ -37,6 +38,7 @@ class OwnershipScorer:
     # Public API
     # ------------------------------------------------------------------
 
+    # Tính điểm ownership cho một người dựa trên gần, hướng, flow và thời gian.
     def compute(
             self,
             trash_center:   tuple[int, int],
@@ -81,6 +83,7 @@ class OwnershipScorer:
         )
         return round(score, 4)
 
+    # Duyệt toàn bộ người hiện tại/gần đây để chọn owner có điểm cao nhất.
     def find_best_owner(
             self,
             trash_center:    tuple[int, int],
@@ -143,6 +146,7 @@ class OwnershipScorer:
     # Internal helpers
     # ------------------------------------------------------------------
 
+    # Tìm khoảng cách gần nhất từ rác tới mọi điểm lịch sử của người.
     @staticmethod
     def _nearest(positions, tx, ty, current_frame):
         min_dist, closest_offset = float("inf"), 0
@@ -155,6 +159,7 @@ class OwnershipScorer:
                     closest_offset = current_frame - fidx
         return min_dist, closest_offset
 
+    # Tính hướng quỹ đạo người có đang rời xa vị trí rác hay không.
     @staticmethod
     def _direction_score(positions, tx, ty) -> float:
         if len(positions) < 3:
@@ -172,6 +177,7 @@ class OwnershipScorer:
             return 0.0
         return max(0.0, float(np.dot(move_n, away / a_dist)))
 
+    # Tính điểm hướng bằng vector optical flow gần đây của người.
     @staticmethod
     def _flow_score(p_id, positions, tx, ty, flow_vecs) -> float:
         if p_id not in flow_vecs or not flow_vecs[p_id]:
@@ -190,6 +196,7 @@ class OwnershipScorer:
             return 0.0
         return max(0.0, float(np.dot(flow_n, away / a_mag)))
 
+    # Lấy anchor chính từ entry lịch sử ở cả dạng dict hoặc tuple cũ.
     @staticmethod
     def _entry_anchor(entry) -> tuple[float, float]:
         if isinstance(entry, dict):
@@ -197,12 +204,14 @@ class OwnershipScorer:
             return float(anchor[0]), float(anchor[1])
         return float(entry[0]), float(entry[1])
 
+    # Lấy frame_idx từ entry lịch sử ở cả dạng dict hoặc tuple cũ.
     @staticmethod
     def _entry_frame(entry) -> int:
         if isinstance(entry, dict):
             return int(entry.get("frame", 0))
         return int(entry[2]) if len(entry) >= 3 else 0
 
+    # Lấy danh sách điểm đại diện của entry để tính khoảng cách tới rác.
     @staticmethod
     def _entry_points(entry) -> list[tuple[float, float]]:
         if isinstance(entry, dict):

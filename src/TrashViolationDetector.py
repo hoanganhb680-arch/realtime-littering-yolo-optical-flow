@@ -20,6 +20,7 @@ from trash_lifecycle import TrashLifecycleMixin
 class TrashViolationDetector(DetectorIoMixin, DetectionParsingMixin, TrashLifecycleMixin):
     """Coordinate camera/video input, detection, ownership scoring, and logging."""
 
+    # Khởi tạo các module con và bộ nhớ theo dõi người/rác.
     def __init__(self, cfg=None):
         self.cfg = cfg or Config()
         self._motion_detector = MotionDetector()
@@ -42,6 +43,7 @@ class TrashViolationDetector(DetectorIoMixin, DetectionParsingMixin, TrashLifecy
         self._last_pending_reason_log: dict[int, int] = {}
         self._last_camera_wait_log_at = 0.0
 
+    # Vòng lặp chính: load YOLO, đọc frame, xử lý và xuất kết quả.
     def run(self) -> None:
         cfg = self.cfg
         self._validate_paths()
@@ -97,6 +99,7 @@ class TrashViolationDetector(DetectorIoMixin, DetectionParsingMixin, TrashLifecy
 
         self._finish_run(cap, out_vid, is_live)
 
+    # Mở nguồn đầu vào: camera live hoặc file video.
     def _open_capture(self, is_live: bool):
         if is_live:
             from ThreadedCamera import ThreadedCamera
@@ -110,6 +113,7 @@ class TrashViolationDetector(DetectorIoMixin, DetectionParsingMixin, TrashLifecy
             raise RuntimeError(f"Cannot open video source: {self.cfg.VIDEO_SOURCE}")
         return cap
 
+    # Tính bước nhảy frame để file mode chạy gần FPS mục tiêu.
     def _file_frame_step(self, source_fps: float, is_live: bool) -> int:
         if is_live:
             return 1
@@ -121,10 +125,12 @@ class TrashViolationDetector(DetectorIoMixin, DetectionParsingMixin, TrashLifecy
             return 1
         return max(1, round(source_fps / target_fps))
 
+    # Kiểm tra frame file hiện tại có cần bỏ qua để giảm tải không.
     @staticmethod
     def _skip_file_frame(raw_frame_idx: int, file_frame_step: int) -> bool:
         return (raw_frame_idx - 1) % max(1, file_frame_step) != 0
 
+    # Xử lý một frame: MOG2, YOLO+ByteTrack, parse, flow và lifecycle.
     def _process_frame(
             self,
             model,
@@ -148,6 +154,7 @@ class TrashViolationDetector(DetectorIoMixin, DetectionParsingMixin, TrashLifecy
         self._draw_hud(annotated, frame_idx)
         return curr_gray, annotated
 
+    # Giữ nhịp file mode theo FILE_MODE_FPS để xem output ổn định.
     def _pace_file_mode(self, is_live: bool, started_at: float) -> None:
         if is_live:
             return
@@ -155,6 +162,7 @@ class TrashViolationDetector(DetectorIoMixin, DetectionParsingMixin, TrashLifecy
         if wait_time > 0:
             time.sleep(wait_time)
 
+    # Dọn tài nguyên và gửi thông báo khi video xử lý xong.
     def _finish_run(self, cap, out_vid, is_live: bool) -> None:
         cap.release()
         if out_vid is not None:

@@ -2,14 +2,16 @@ import { useState, useCallback } from 'react'
 import VideoPanel  from '../components/VideoPanel'
 import AlertFeed   from '../components/AlertFeed'
 import StatsBar    from '../components/StatsBar'
+import Lightbox    from '../components/Lightbox'
 import { useViolations } from '../hooks/useViolations'
 import './Dashboard.css'
 
 export default function Dashboard() {
-  const { violations, total, loading, addAlert } = useViolations()
+  const { violations, total, loading, addAlert, resetLocal } = useViolations()
 
   // Danh sách cảnh báo real-time thời gian thực
   const [liveAlerts, setLiveAlerts] = useState([])
+  const [lightboxSrc, setLightboxSrc] = useState(null)
 
   const handleAlert = useCallback((alertData) => {
     // Thêm vào cơ sở dữ liệu và danh sách lịch sử
@@ -53,6 +55,12 @@ export default function Dashboard() {
     setLiveAlerts(prev => prev.filter(alert => alert.id !== id))
   }, [])
 
+  const handleStreamRestart = useCallback(() => {
+    resetLocal()
+    setLiveAlerts([])
+    setLightboxSrc(null)
+  }, [resetLocal])
+
   return (
     <main className="dashboard">
       {/* Stats row */}
@@ -62,7 +70,11 @@ export default function Dashboard() {
       <div className="dashboard-grid">
         {/* Left: Video stream */}
         <div className="dashboard-video">
-          <VideoPanel onAlert={handleAlert} />
+          <VideoPanel
+            onAlert={handleAlert}
+            onStreamRestart={handleStreamRestart}
+            latestViolation={violations[0]}
+          />
 
           {/* Info bar */}
           <div className="video-info-bar">
@@ -79,9 +91,11 @@ export default function Dashboard() {
             alerts={liveAlerts} 
             onClear={handleClearAlerts} 
             onDismiss={handleDismissAlert} 
+            onImageClick={setLightboxSrc}
           />
         </div>
       </div>
+      <Lightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
     </main>
   )
 }
